@@ -5,39 +5,108 @@ const armorPieces = [
     { name: "Netherite Boots", enchantments: ["Protection IV", "Unbreaking III", "Mending", "Depth Strider III / Frost Walker II", "Soul Speed III", "Feather Falling IV", "Thorns III"] }
 ];
 
+const toolPieces = [
+    { name: "Netherite Sword", enchantments: ["Sharpness V", "Unbreaking III", "Mending", "Looting III", "Fire Aspect II"] },
+    { name: "Netherite Pickaxe", enchantments: ["Efficiency V", "Unbreaking III", "Mending", "Fortune III / Silk Touch"] },
+    { name: "Netherite Axe", enchantments: ["Efficiency V", "Unbreaking III", "Mending", "Sharpness V", "Silk Touch / Fortune III"] },
+    { name: "Netherite Shovel", enchantments: ["Efficiency V", "Unbreaking III", "Mending", "Silk Touch / Fortune III"] },
+    { name: "Netherite Hoe", enchantments: ["Efficiency V", "Unbreaking III", "Mending", "Fortune III", "Silk Touch"] }
+];
+
 const trims = ["Trim", "Spire", "Tide", "Ward", "Vex", "Wild", "Rib", "Coast", "Sentry", "Eye", "Snout", "Wayfinder"];
 const colors = ["Color", "Emerald", "Redstone", "Lapis", "Amethyst", "Quartz", "Netherite", "Diamond", "Gold", "Iron", "Copper", "Resin"];
+
+let currentView = 'armor'; // or 'tools'
+
+function renderItems() {
+    const grid = document.querySelector(".armor-grid");
+
+    // Start fade-out
+    grid.classList.remove('fade-in');
+    grid.classList.add('fade-out');
+
+    // Wait for fade-out transition
+    setTimeout(() => {
+        grid.innerHTML = "";
+
+        const data = (currentView === 'armor') ? armorPieces : toolPieces;
+
+        data.forEach((piece, index) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'armor-piece';
+
+            let dropdownHTML = '';
+            if (currentView === 'armor') {
+                dropdownHTML = `
+                    <div class="dropdown-group">
+                        <select class="trim-select">
+                            ${trims.map(trim => `<option value="${trim}">${trim}</option>`).join('')}
+                        </select>
+                        <select class="color-select">
+                            ${colors.map(color => `<option value="${color}">${color}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }
+
+            itemDiv.innerHTML = `
+                <div class="armor-header">
+                    <h2>${piece.name}</h2>
+                    ${dropdownHTML}
+                </div>
+                <div class="enchantments">
+                    ${piece.enchantments.map(enchant => `
+                        <label class="enchantment">
+                            <input type="checkbox" data-enchant="${enchant}" ${enchant.includes("Thorns") ? 'disabled' : ''}>
+                            ${enchant}
+                        </label>
+                    `).join('')}
+                </div>
+            `;
+
+            grid.appendChild(itemDiv);
+        });
+
+        // Add listeners to checkboxes to save data on change
+        document.querySelectorAll('input[type="checkbox"]').forEach(el =>
+            el.addEventListener('change', () => saveArmorData(currentView))
+        );
+
+        // ✅ Add this line for dropdowns
+        document.querySelectorAll('select').forEach(el =>
+            el.addEventListener('change', () => saveArmorData(currentView))
+        );
+
+        toggleThorns();
+        loadArmorData(currentView); // ✅ Only load here — no save immediately after
+
+        requestAnimationFrame(() => {
+            grid.classList.remove('fade-out');
+            grid.classList.add('fade-in');
+        });
+    }, 200); // Matches CSS transition duration
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     (localStorage.getItem('theme') === 'light') ? setLightTheme() : setDarkTheme();
 
-    const grid = document.querySelector(".armor-grid");
-    const savedData = JSON.parse(localStorage.getItem('armorData')) || {};
+    renderItems(); // ← now works because it was defined earlier
 
-    armorPieces.forEach(piece => {
-        const armorDiv = document.createElement('div');
-        armorDiv.className = 'armor-piece';
-        armorDiv.innerHTML = `
-            <div class="armor-header">
-                <h2>${piece.name}</h2>
-                <div class="dropdown-group">
-                    <select class="trim-select">${trims.map(trim => `<option value="${trim}">${trim}</option>`).join('')}</select>
-                    <select class="color-select">${colors.map(color => `<option value="${color}">${color}</option>`).join('')}</select>
-                </div>
-            </div>
-            <div class="enchantments">
-                ${piece.enchantments.map(enchant => `
-                    <label class="enchantment">
-                        <input type="checkbox" data-enchant="${enchant}" ${enchant.includes("Thorns") ? 'disabled' : ''}>
-                        ${enchant}
-                    </label>
-                `).join('')}
-            </div>
-        `;
-        grid.appendChild(armorDiv);
+    document.getElementById("toggle-view-btn").addEventListener("click", () => {
+        // Save the view we're about to leave
+        saveArmorData(currentView);
+
+        // Switch the view
+        currentView = (currentView === 'armor') ? 'tools' : 'armor';
+
+        // Update the button label
+        document.getElementById("toggle-view-btn").textContent =
+            (currentView === 'armor') ? 'Show Tools' : 'Show Armor';
+
+        // Render the new view
+        renderItems();
     });
 
-    document.querySelectorAll('select, input[type="checkbox"]').forEach(el => el.addEventListener('change', saveArmorData));
     document.getElementById("reset-btn").addEventListener("click", resetArmorData);
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
@@ -45,37 +114,58 @@ document.addEventListener("DOMContentLoaded", () => {
     if (thornsToggle) {
         const thornsEnabled = localStorage.getItem('thornsEnabled') === 'true';
         thornsToggle.checked = thornsEnabled;
+        thornsToggle.addEventListener('change', toggleThorns);
     }
 
-    if (thornsToggle) thornsToggle.addEventListener('change', toggleThorns);
-
-    loadArmorData();
-    toggleThorns();
+    document.querySelector('.container').classList.add('show');
 });
 
-function saveArmorData() {
+
+function saveArmorData(viewType = currentView) {
     const data = {};
-    document.querySelectorAll('.armor-piece').forEach((pieceDiv, index) => {
-        const trim = pieceDiv.querySelector('.trim-select').value;
-        const color = pieceDiv.querySelector('.color-select').value;
+    document.querySelectorAll('.armor-piece').forEach(pieceDiv => {
+        const name = pieceDiv.querySelector("h2").textContent;
+
+        const trimSelect = pieceDiv.querySelector('.trim-select');
+        const colorSelect = pieceDiv.querySelector('.color-select');
+
+        const trim = trimSelect ? trimSelect.value : null;
+        const color = colorSelect ? colorSelect.value : null;
+
         const enchants = Array.from(pieceDiv.querySelectorAll('input[type="checkbox"]:checked'))
                               .map(cb => cb.dataset.enchant);
-        data[armorPieces[index].name] = { trim, color, enchantments: enchants };
+
+        data[name] = {
+            ...(trim && { trim }),
+            ...(color && { color }),
+            enchantments: enchants
+        };
     });
-    localStorage.setItem('armorData', JSON.stringify(data));
+
+    const storageKey = (viewType === 'armor') ? 'armorData' : 'toolData';
+    localStorage.setItem(storageKey, JSON.stringify(data));
     showSaveNotice();
 }
 
-function loadArmorData() {
-    const savedData = JSON.parse(localStorage.getItem('armorData'));
+
+
+
+
+function loadArmorData(viewType = currentView) {
+    const storageKey = (viewType === 'armor') ? 'armorData' : 'toolData';
+    const savedData = JSON.parse(localStorage.getItem(storageKey));
     if (!savedData) return;
 
-    document.querySelectorAll('.armor-piece').forEach((pieceDiv, index) => {
-        const pieceData = savedData[armorPieces[index].name];
+    document.querySelectorAll('.armor-piece').forEach(pieceDiv => {
+        const name = pieceDiv.querySelector("h2").textContent;
+        const pieceData = savedData[name];
         if (!pieceData) return;
 
-        pieceDiv.querySelector('.trim-select').value = pieceData.trim || "Trim";
-        pieceDiv.querySelector('.color-select').value = pieceData.color || "Color";
+        const trimSelect = pieceDiv.querySelector('.trim-select');
+        const colorSelect = pieceDiv.querySelector('.color-select');
+
+        if (trimSelect) trimSelect.value = pieceData.trim ?? "Trim";
+        if (colorSelect) colorSelect.value = pieceData.color ?? "Color";
 
         pieceDiv.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
             checkbox.checked = pieceData.enchantments.includes(checkbox.dataset.enchant);
@@ -83,14 +173,20 @@ function loadArmorData() {
     });
 }
 
+
+
+
 function resetArmorData() {
-    document.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
-    document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-    localStorage.removeItem('armorData');
-    document.getElementById("reset-btn").classList.add('flash');
-    setTimeout(() => document.getElementById("reset-btn").classList.remove('flash'), 500);
-    showSaveNotice("Reset Successful!");
-}
+     document.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
+     document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+     const storageKey = (currentView === 'armor') ? 'armorData' : 'toolData';
+     localStorage.removeItem(storageKey);
+
+     document.getElementById("reset-btn").classList.add('flash');
+     setTimeout(() => document.getElementById("reset-btn").classList.remove('flash'), 500);
+     showSaveNotice("Reset Successful!");
+ }
 
 function showSaveNotice(message = "Saved!") {
     const notice = document.getElementById('save-notice');
@@ -164,6 +260,8 @@ function hideLightModeJoke() {
 }
 
 function toggleThorns() {
+    if (currentView !== 'armor') return; // 🛑 Do nothing in tool view
+
     const thornsToggle = document.getElementById('thorns-toggle');
     localStorage.setItem('thornsEnabled', thornsToggle.checked);
 
@@ -186,7 +284,7 @@ function toggleThorns() {
         label.classList.toggle('disabled-thorns', !thornsToggle.checked);
     });
 
-    saveArmorData();
+    saveArmorData(currentView);
 }
 
 window.addEventListener('load', () => {
